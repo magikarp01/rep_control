@@ -405,7 +405,7 @@ def forward_pass(hmodel, tokenizer, input_ids, act_idx, stuff_to_patch, act_type
     return output, true_prob, false_prob
 
 
-def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=False, erase_seq_pos=None, oracle=True):
+def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=False, erase_seq_pos=None, oracle=True, existing_fitters=None, return_fitters=False):
     """
     Take a clean_cache and concept-erase the head data.
     probe_indices: list of tuples of (layer, head) (for z) or layer (for resid) to erase
@@ -418,6 +418,8 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
     erase_seq_pos is for if data has multiple seq positions, erase specific ones (takes an array e.g. [-3, -1])
     
     if oracle, use oracle eraser (i.e. erase with correct label). Otherwise, use LEACE.
+    if existing_fitters is not None, should be a dictionary with keys layer and value LeaceFitter objects.
+    if return_fitters, return the fitters used to erase the data.
     """
     n_samples = len(clean_cache[probe_indices[0]].keys())
     labels = torch.tensor(labels)
@@ -425,10 +427,31 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
 
     output_cache = {}
 
+    def get_fitter(data):
+        if oracle:
+            if existing_fitters is not None:
+                fitter = existing_fitters[probe_index]
+            else:
+                fitter = OracleFitter.fit(data, labels)                    
+            erased_data[:, seq_pos, :] = fitter.eraser(data, labels)
+        else:
+            if existing_fitters is not None:
+                fitter = existing_fitters[probe_index]
+            else:
+                fitter = LeaceFitter.fit(data, labels)
+        return fitter
+    
+    def get_erased(fitter, data):
+        if oracle:
+            return fitter.eraser(data, labels)
+        else:
+            return fitter.eraser(data)
 
     X_erased_cache = {}
     if test_probe:
         probes = {}
+
+    fitters = {}
     for probe_index in tqdm(probe_indices):
         clean_data = []
         for i in range(n_samples):
@@ -446,17 +469,15 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
                 # clean_data is shape (n_samples, seq_len, d_model)
                 # eraser = LeaceEraser.fit(clean_data[:, seq_pos, :], labels)
 
-                if oracle:
-                    fitter = OracleFitter.fit(clean_data[:, seq_pos, :], labels)
-                    erased_data[:, seq_pos, :] = fitter.eraser(clean_data[:, seq_pos, :], labels)
-                else:
-                    fitter = LeaceFitter.fit(clean_data[:, seq_pos, :], labels)
-                    erased_data[:, seq_pos, :] = fitter.eraser(clean_data[:, seq_pos, :])
+                fitter = get_fitter(clean_data[:, seq_pos, :])
+                erased_data[:, seq_pos, :] = get_erased(fitter, clean_data[:, seq_pos, :])
 
         else:
-            fitter = LeaceFitter.fit(clean_data, labels)
-            erased_data = fitter.eraser(clean_data)
-            fitter.reset()
+            fitter = get_fitter(clean_data)
+            erased_data = get_erased(fitter, clean_data)
+
+        if return_fitters:
+            fitters[probe_index] = fitter
 
         if test_probe:
             # train probe on final seq pos
@@ -482,10 +503,12 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
             if in_place:
                 clean_cache[probe_index][i] = erased_sample
     
+    return_output = (output_cache,)
     if test_probe:
-        return output_cache, probes, X_erased_cache
-    else:
-        return output_cache
+        return_output += (probes, X_erased_cache)
+    if return_fitters:
+        return_output += (fitters,)
+    return return_output
 
 def combine_caches(clean_z_cache, erased_cache, stuff_to_patch):
     output_cache = clean_z_cache.copy()
