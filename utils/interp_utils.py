@@ -491,7 +491,6 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
             probes[probe_index] = null_lr
             beta = torch.from_numpy(null_lr.coef_)
             y_pred = null_lr.predict(X_erased)
-            print(y_pred)
             accuracy = accuracy_score(labels, y_pred)
             print(f"{beta.norm(p=torch.inf)=}, {accuracy=}")
         # print(f"{erased_data.shape=}")
