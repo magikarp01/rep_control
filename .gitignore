@@ -1,4 +1,4 @@
 llama-weights-13b-chat-hf/
-truthfulness_dirs/
+truthfulness_dirs*/
 *__pycache__/
 *.pkl

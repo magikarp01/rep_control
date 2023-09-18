@@ -8,6 +8,7 @@ from functools import partial
 from transformer_lens import HookedTransformer
 from concept_erasure import LeaceEraser, LeaceFitter
 from concept_erasure.oracle import OracleEraser, OracleFitter
+from concept_erasure.quadratic import QuadraticEraser, QuadraticFitter
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 
@@ -405,7 +406,7 @@ def forward_pass(hmodel, tokenizer, input_ids, act_idx, stuff_to_patch, act_type
     return output, true_prob, false_prob
 
 
-def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=False, erase_seq_pos=None, oracle=True, existing_fitters=None, return_fitters=False):
+def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=False, erase_seq_pos=None, oracle=True, quadratic=False, existing_fitters=None, return_fitters=False):
     """
     Take a clean_cache and concept-erase the head data.
     probe_indices: list of tuples of (layer, head) (for z) or layer (for resid) to erase
@@ -434,6 +435,11 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
             else:
                 fitter = OracleFitter.fit(data, labels)                    
             erased_data[:, seq_pos, :] = fitter.eraser(data, labels)
+        elif quadratic:
+            if existing_fitters is not None:
+                fitter = existing_fitters[probe_index]
+            else:
+                fitter = QuadraticFitter.fit(data, labels)
         else:
             if existing_fitters is not None:
                 fitter = existing_fitters[probe_index]
@@ -442,7 +448,7 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
         return fitter
     
     def get_erased(fitter, data):
-        if oracle:
+        if oracle or quadratic:
             return fitter.eraser(data, labels)
         else:
             return fitter.eraser(data)
