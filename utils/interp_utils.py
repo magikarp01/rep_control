@@ -428,21 +428,14 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
 
     output_cache = {}
 
-    def get_fitter(data):
-        if oracle:
-            if existing_fitters is not None:
-                fitter = existing_fitters[probe_index]
-            else:
-                fitter = OracleFitter.fit(data, labels)                    
-            erased_data[:, seq_pos, :] = fitter.eraser(data, labels)
-        elif quadratic:
-            if existing_fitters is not None:
-                fitter = existing_fitters[probe_index]
-            else:
-                fitter = QuadraticFitter.fit(data, labels)
+    def get_fitter(data, probe_index):
+        if existing_fitters is not None:
+            fitter = existing_fitters[probe_index]
         else:
-            if existing_fitters is not None:
-                fitter = existing_fitters[probe_index]
+            if oracle:
+                fitter = OracleFitter.fit(data, labels)
+            elif quadratic:
+                fitter = QuadraticFitter.fit(data, labels)
             else:
                 fitter = LeaceFitter.fit(data, labels)
         return fitter
@@ -475,11 +468,11 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
                 # clean_data is shape (n_samples, seq_len, d_model)
                 # eraser = LeaceEraser.fit(clean_data[:, seq_pos, :], labels)
 
-                fitter = get_fitter(clean_data[:, seq_pos, :])
+                fitter = get_fitter(clean_data[:, seq_pos, :], probe_index)
                 erased_data[:, seq_pos, :] = get_erased(fitter, clean_data[:, seq_pos, :])
 
         else:
-            fitter = get_fitter(clean_data)
+            fitter = get_fitter(clean_data, probe_index)
             erased_data = get_erased(fitter, clean_data)
 
         if return_fitters:
