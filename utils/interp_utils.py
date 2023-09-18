@@ -515,6 +515,28 @@ def combine_caches(clean_z_cache, erased_cache, stuff_to_patch):
     
     return output_cache
 
+def split_cache_train_test(cache, labels, data_rows, train_ratio, n_layers=80):
+    train_cache = {}
+    test_cache = {}
+    n_samples = len(labels)
+    for layer in range(n_layers):
+        train_labels = []
+        test_labels = []
+        train_data_rows = []
+        test_data_rows = []
+        train_cache[layer] = {}
+        test_cache[layer] = {}
+        for idx in range(n_samples):
+            if idx >= train_ratio*n_samples:
+                test_cache[layer][idx - train_ratio*n_samples] = cache[layer][idx]
+                test_labels.append(labels[idx])
+                test_data_rows.append(data_rows[idx])
+            else:
+                train_cache[layer][idx] = cache[layer][idx]
+                train_labels.append(labels[idx])
+                train_data_rows.append(data_rows[idx])
+    return train_cache, test_cache, train_labels, test_labels, train_data_rows, test_data_rows
+
 """
 forward method from llama:
 
