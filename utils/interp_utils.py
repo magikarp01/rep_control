@@ -528,7 +528,7 @@ def split_cache_train_test(cache, labels, data_rows, train_ratio, n_layers=80):
         test_cache[layer] = {}
         for idx in range(n_samples):
             if idx >= train_ratio*n_samples:
-                test_cache[layer][idx - train_ratio*n_samples] = cache[layer][idx]
+                test_cache[layer][int(idx - train_ratio*n_samples)] = cache[layer][idx]
                 test_labels.append(labels[idx])
                 test_data_rows.append(data_rows[idx])
             else:
