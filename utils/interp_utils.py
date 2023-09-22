@@ -406,7 +406,7 @@ def forward_pass(hmodel, tokenizer, input_ids, act_idx, stuff_to_patch, act_type
     return output, true_prob, false_prob
 
 
-def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=False, erase_seq_pos=None, oracle=True, quadratic=False, existing_fitters=None, return_fitters=False):
+def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=False, erase_seq_pos=None, oracle=True, quadratic=False, existing_fitters=None, return_fitters=False, seq_pos=None):
     """
     Take a clean_cache and concept-erase the head data.
     probe_indices: list of tuples of (layer, head) (for z) or layer (for resid) to erase
@@ -454,7 +454,8 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
     for probe_index in tqdm(probe_indices):
         clean_data = []
         for i in range(n_samples):
-            clean_data.append(clean_cache[probe_index][i][0])
+            if seq_pos is not None:
+                clean_data.append(clean_cache[probe_index][i][0, seq_pos])
         clean_data = torch.from_numpy(np.stack(clean_data, axis=0)).float()
         if erase_seq_pos is not None:
             clean_data = clean_data[:, erase_seq_pos]
@@ -471,12 +472,15 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
                 fitter = get_fitter(clean_data[:, seq_pos, :], probe_index)
                 erased_data[:, seq_pos, :] = get_erased(fitter, clean_data[:, seq_pos, :])
 
+                if return_fitters:
+                    fitters[probe_index] = {}
+                    fitters[probe_index][seq_pos] = fitter
+
         else:
             fitter = get_fitter(clean_data, probe_index)
             erased_data = get_erased(fitter, clean_data)
-
-        if return_fitters:
-            fitters[probe_index] = fitter
+            if return_fitters:
+                fitters[probe_index] = fitter
 
         if test_probe:
             # train probe on final seq pos
