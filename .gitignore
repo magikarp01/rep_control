@@ -3,3 +3,4 @@ truthfulness_dirs*/
 *__pycache__/
 *.pkl
 performances/
+jupyter_logs/
