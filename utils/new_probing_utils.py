@@ -48,6 +48,7 @@ from abc import abstractclassmethod
 
 import os
 from torch import Tensor
+from sklearn.preprocessing import StandardScaler
 
 
 
@@ -117,7 +118,7 @@ class ModelActs:
             self.indices_trains, self.indices_tests = train_test_split(act_indices, test_size=test_ratio, train_size=train_ratio)
 
 
-    def _train_probe(self, act_type, probe_index, max_iter=10000, accuracy_func=accuracy_score, rep_shash=False):
+    def _train_probe(self, act_type, probe_index, max_iter=10000, accuracy_func=accuracy_score, rep_shash=False, scale_descale=False):
         """
         Train a single logistic regression probe on input activations X_acts and labels (either 1 or 0 for truth or false). 
         Trains on train_indices of X_acts and labels, tests on test_indices.
@@ -126,17 +127,31 @@ class ModelActs:
             act_type: type of activations to train probe on, "z" or "mlp_out" or etc.
             probe_index: index of probe to train, (layer, head) for z.
             accuracy_func: function to calculate accuracy of prediction, default is accuracy_score from sklearn.metrics.
+            scale_descale: whether to scale activations before training probe and descale after training probe. This is to prevent numerical instability? (Done in Shashwat's code). Fit on test code (assuming that actual probes will be tested on other data)
 
         Returns probe, accuracy
         """
 
         X_acts = self.activations[act_type][probe_index]
 
+
         X_train_head = X_acts[self.indices_trains] # integer array indexing
         y_train = self.labels[self.indices_trains]
 
         X_test_head = X_acts[self.indices_tests]
         y_test = self.labels[self.indices_tests]
+
+        if scale_descale:
+            scaler = StandardScaler()
+            scaler.fit(X_test_head)
+            X_train_head = scaler.transform(X_train_head)
+            X_test_head = scaler.transform(X_test_head)
+            
+            dscaler = StandardScaler()
+            dscaler.fit(X_test_head)
+            X_train_head = dscaler.transform(X_train_head)
+            X_test_head = dscaler.transform(X_test_head)
+
 
         # print(f"{X_train_head.shape=}, {y_train.shape=}, {X_test_head.shape=}, {y_test.shape=}")
 
@@ -155,10 +170,12 @@ class ModelActs:
         # y_val_pred = clf.predict(self.activations[act_type][probe_index][self.indices_tests])
         acc = accuracy_func(y_test, y_val_pred)
 
+        if scale_descale:
+            return clf, acc, scaler, dscaler
         return clf, acc
 
 
-    def train_probes(self, act_type, test_ratio=0.2, train_ratio=None, max_iter=10000, verbose=False, in_order=True, rep_shash=False):
+    def train_probes(self, act_type, test_ratio=0.2, train_ratio=None, max_iter=10000, verbose=False, in_order=True, rep_shash=False, scale_descale=False):
         """
         Train probes on all provided activations of act_type in self.activations.
         If train test split is not already set, set it with given keywords.
@@ -175,16 +192,26 @@ class ModelActs:
             self.probes[act_type] = {}
             self.probe_accs[act_type] = {}
 
-        if verbose:            
-            for probe_index in tqdm(self.activations[act_type]):
-                clf, acc = self._train_probe(act_type, probe_index, max_iter=max_iter, rep_shash=rep_shash)
-                self.probes[act_type][probe_index] = clf
-                self.probe_accs[act_type][probe_index] = acc
+        scalers = {}
+        dscalers = {}
+
+        if verbose: 
+            probe_index_iter = tqdm(self.activations[act_type])
         else:
-            for probe_index in self.activations[act_type]:
-                clf, acc = self._train_probe(act_type, probe_index, max_iter=max_iter, rep_shash=rep_shash)
-                self.probes[act_type][probe_index] = clf
-                self.probe_accs[act_type][probe_index] = acc
+            probe_index_iter = self.activations[act_type]
+
+        for probe_index in probe_index_iter:
+            if scale_descale:
+                clf, acc, scaler, dscaler = self._train_probe(act_type, probe_index, max_iter=max_iter, rep_shash=rep_shash, scale_descale=scale_descale)
+                scalers[probe_index] = scaler
+                dscalers[probe_index] = dscaler
+            else:
+                clf, acc = self._train_probe(act_type, probe_index, max_iter=max_iter, rep_shash=rep_shash, scale_descale=scale_descale)
+            self.probes[act_type][probe_index] = clf
+            self.probe_accs[act_type][probe_index] = acc
+        
+        if scale_descale:
+            return scalers, dscalers
 
 
     def regenerate_probe_accs(self, act_type, test_ratio=0.2, accuracy_func=accuracy_score):

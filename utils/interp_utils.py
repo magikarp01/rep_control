@@ -11,6 +11,7 @@ from concept_erasure.oracle import OracleEraser, OracleFitter
 from concept_erasure.quadratic import QuadraticEraser, QuadraticFitter
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
+import random
 
 def tot_logit_diff(tokenizer, model_acts, use_probs=True, eps=1e-8, test_only=True, act_type="z", check_balanced_output=False, 
                    positive_str_tokens = ["Yes", "yes", "True", "true"],
@@ -519,10 +520,16 @@ def combine_caches(clean_z_cache, erased_cache, stuff_to_patch):
     
     return output_cache
 
-def split_cache_train_test(cache, labels, data_rows, train_ratio, n_layers=80):
+def split_cache_train_test(cache, labels, data_rows, train_ratio, n_layers=80, in_order=False):
     train_cache = {}
     test_cache = {}
     n_samples = len(labels)
+
+    if in_order:
+        train_indices = np.arange(int(train_ratio*n_samples))
+    else:
+        train_indices = np.random.choice(np.arange(n_samples), size=int(train_ratio*n_samples), replace=False)
+
     for layer in range(n_layers):
         train_labels = []
         test_labels = []
@@ -530,15 +537,20 @@ def split_cache_train_test(cache, labels, data_rows, train_ratio, n_layers=80):
         test_data_rows = []
         train_cache[layer] = {}
         test_cache[layer] = {}
+
+        test_idx = 0
+        train_idx = 0
         for idx in range(n_samples):
-            if idx >= train_ratio*n_samples:
-                test_cache[layer][int(idx - train_ratio*n_samples)] = cache[layer][idx]
+            if idx not in train_indices:
+                test_cache[layer][test_idx] = cache[layer][idx]
                 test_labels.append(labels[idx])
                 test_data_rows.append(data_rows[idx])
+                test_idx += 1
             else:
-                train_cache[layer][idx] = cache[layer][idx]
+                train_cache[layer][train_idx] = cache[layer][idx]
                 train_labels.append(labels[idx])
                 train_data_rows.append(data_rows[idx])
+                train_idx += 1
     return train_cache, test_cache, train_labels, test_labels, train_data_rows, test_data_rows
 
 """
