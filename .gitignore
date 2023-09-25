@@ -1,4 +1,4 @@
-llama-weights-13b-chat-hf/
+llama-weights-13b*/
 truthfulness_dirs*/
 *__pycache__/
 *.pkl

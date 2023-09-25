@@ -117,7 +117,7 @@ class ModelActs:
             self.indices_trains, self.indices_tests = train_test_split(act_indices, test_size=test_ratio, train_size=train_ratio)
 
 
-    def _train_probe(self, act_type, probe_index, max_iter=10000, accuracy_func=accuracy_score):
+    def _train_probe(self, act_type, probe_index, max_iter=10000, accuracy_func=accuracy_score, rep_shash=False):
         """
         Train a single logistic regression probe on input activations X_acts and labels (either 1 or 0 for truth or false). 
         Trains on train_indices of X_acts and labels, tests on test_indices.
@@ -140,7 +140,11 @@ class ModelActs:
 
         # print(f"{X_train_head.shape=}, {y_train.shape=}, {X_test_head.shape=}, {y_test.shape=}")
 
-        clf = LogisticRegression(max_iter=max_iter).fit(X_train_head, y_train)
+        if rep_shash:
+            clf = LogisticRegression(solver='liblinear', C=1e-2, random_state=0, max_iter=50).fit(X_train_head, y_train)
+        else:
+            clf = LogisticRegression(max_iter=max_iter, solver="sag").fit(X_train_head, y_train)
+
         # beta = torch.from_numpy(clf.coef_)
         # print(f"{beta.norm(p=torch.inf)=}")
 
@@ -154,7 +158,7 @@ class ModelActs:
         return clf, acc
 
 
-    def train_probes(self, act_type, test_ratio=0.2, train_ratio=None, max_iter=10000, verbose=False, in_order=True):
+    def train_probes(self, act_type, test_ratio=0.2, train_ratio=None, max_iter=10000, verbose=False, in_order=True, rep_shash=False):
         """
         Train probes on all provided activations of act_type in self.activations.
         If train test split is not already set, set it with given keywords.
@@ -173,12 +177,12 @@ class ModelActs:
 
         if verbose:            
             for probe_index in tqdm(self.activations[act_type]):
-                clf, acc = self._train_probe(act_type, probe_index, max_iter=max_iter)
+                clf, acc = self._train_probe(act_type, probe_index, max_iter=max_iter, rep_shash=rep_shash)
                 self.probes[act_type][probe_index] = clf
                 self.probe_accs[act_type][probe_index] = acc
         else:
             for probe_index in self.activations[act_type]:
-                clf, acc = self._train_probe(act_type, probe_index, max_iter=max_iter)
+                clf, acc = self._train_probe(act_type, probe_index, max_iter=max_iter, rep_shash=rep_shash)
                 self.probes[act_type][probe_index] = clf
                 self.probe_accs[act_type][probe_index] = acc
 
@@ -606,6 +610,7 @@ class ModelActsLargeSimple(ModelActs):
         self.labels = labels
         if act_type not in self.activations:
             self.activations[act_type] = {}
+        # print(clean_cache.keys())
 
         for probe_index in clean_cache.keys():
             X_acts = []
@@ -620,7 +625,7 @@ class ModelActsLargeSimple(ModelActs):
                 else:
                     X_acts.append(clean_cache[probe_index][i][0])
             
-            # print(f"{np.stack(X_acts, axis=0).shape=}")
+            # print(f"{num_samples=}, {np.stack(X_acts, axis=0).shape=}")
             self.activations[act_type][probe_index] = np.stack(X_acts, axis=0)
             assert len(X_acts) == len(labels), f"{len(X_acts)} vs {labels.shape}" # assert labels line up with loaded activations, size of dataset should be same
         
