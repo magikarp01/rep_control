@@ -407,7 +407,7 @@ def forward_pass(hmodel, tokenizer, input_ids, act_idx, stuff_to_patch, act_type
     return output, true_prob, false_prob
 
 
-def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=False, erase_seq_pos=None, oracle=True, quadratic=False, existing_fitters=None, return_fitters=False, seq_pos=None):
+def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=False, erase_seq_pos=None, oracle=True, quadratic=False, existing_fitters=None, return_fitters=False):
     """
     Take a clean_cache and concept-erase the head data.
     probe_indices: list of tuples of (layer, head) (for z) or layer (for resid) to erase
@@ -455,11 +455,14 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
     for probe_index in tqdm(probe_indices):
         clean_data = []
         for i in range(n_samples):
-            if seq_pos is not None:
-                clean_data.append(clean_cache[probe_index][i][0, seq_pos])
+            # if erase_seq_pos is not None:
+            #     clean_data.append(clean_cache[probe_index][i][0, erase_seq_pos])
+            # else:
+            clean_data.append(clean_cache[probe_index][i][0])
         clean_data = torch.from_numpy(np.stack(clean_data, axis=0)).float()
         if erase_seq_pos is not None:
             clean_data = clean_data[:, erase_seq_pos]
+        # print(f"At {probe_index=}, {clean_data.shape=}, {labels.shape=}, {erase_seq_pos=}, {clean_cache[probe_index][i][0].shape=}")
 
 
         if len(clean_data.shape) > 2:
@@ -502,9 +505,13 @@ def erase_data(clean_cache, labels, probe_indices, in_place=False, test_probe=Fa
         output_cache[probe_index] = {}
         for i in range(n_samples):
             erased_sample = erased_data[i:i+1].numpy().astype(np.float16)
-            output_cache[probe_index][i] = erased_sample
-            if in_place:
-                clean_cache[probe_index][i] = erased_sample
+            output_cache[probe_index][i] = np.zeros_like(clean_cache[probe_index][i])
+            if erase_seq_pos is not None:
+                output_cache[probe_index][i][:, erase_seq_pos] = erased_sample
+            else:
+                output_cache[probe_index][i][:] = erased_sample
+            # if in_place:
+            #     clean_cache[probe_index][i] = erased_sample
     
     return_output = (output_cache,)
     if test_probe:
@@ -520,7 +527,10 @@ def combine_caches(clean_z_cache, erased_cache, stuff_to_patch):
     
     return output_cache
 
-def split_cache_train_test(cache, labels, data_rows, train_ratio, n_layers=80, in_order=False):
+def split_cache_train_test(cache, labels, data_rows, train_ratio, n_layers=80, in_order=False, cache_seq_pos=None):
+    """
+    cache_seq_pos should be an array of seq positions to take (e.g. [-1])
+    """
     train_cache = {}
     test_cache = {}
     n_samples = len(labels)
@@ -542,12 +552,19 @@ def split_cache_train_test(cache, labels, data_rows, train_ratio, n_layers=80, i
         train_idx = 0
         for idx in range(n_samples):
             if idx not in train_indices:
-                test_cache[layer][test_idx] = cache[layer][idx]
+                if cache_seq_pos is not None:
+                    # print(f"{cache[layer][idx][:, cache_seq_pos].shape=}, {cache[layer][idx].shape=}, {cache_seq_pos=}")
+                    test_cache[layer][test_idx] = cache[layer][idx][:, cache_seq_pos]
+                else:
+                    test_cache[layer][test_idx] = cache[layer][idx]
                 test_labels.append(labels[idx])
                 test_data_rows.append(data_rows[idx])
                 test_idx += 1
             else:
-                train_cache[layer][train_idx] = cache[layer][idx]
+                if cache_seq_pos is not None:
+                    train_cache[layer][train_idx] = cache[layer][idx][:, cache_seq_pos]
+                else:
+                    train_cache[layer][train_idx] = cache[layer][idx]
                 train_labels.append(labels[idx])
                 train_data_rows.append(data_rows[idx])
                 train_idx += 1
